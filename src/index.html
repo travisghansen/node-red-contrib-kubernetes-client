@@ -1,0 +1,294 @@
+<script type="text/x-red" data-help-name="kubernetes-client-config">
+  <p>Configuration node for Kubernetes Client.</p>
+
+  <h3>Details</h3>
+  <p>Simply supply your <code>KUBECONFIG</code> file contents.</p>
+</script>
+
+<script type="text/x-red" data-help-name="kubernetes-client-watch">
+  <p>Listens to Kubernetes events and outputs the event details.</p>
+
+  <h3>Outputs</h3>
+  <dl class="message-properties">
+    <dt>payload <span class="property-type">object</span></dt>
+    <dd>The Kubernetes watch event.</dd>
+    <dt>topic <span class="property-type">string</span></dt>
+    <dd>The <em>selfLink</em> value of the evented object.</dd>
+    <dt>kube <span class="property-type">object</span></dt>
+    <dd>Details from the current context of the <em>KUBECONFIG</em>.</dd>
+  </dl>
+
+  <h3>Details</h3>
+  <p>Outputs all events from the provided <em>Watch Endpoint</em>.</p>
+
+  <p>The specified <em>Watch Endpoint</em> can be any valid api endpoint. It should only be the path portion of the API and not include server name/port/etc. Some examples include:
+    <ul>
+      <li><code>/api/v1/namespaces</code></li>
+      <li><code>/api/v1/events</code></li>
+      <li><code>/api/v1/namespaces/default/pods</code></li>
+      <li><code>/api/v1/pods</code></li>
+      <li><code>/api/v1/nodes</code></li>
+    </ul>
+  </p>
+
+  <p>You may use <code>kubectl -v6 get &lt;resource&gt [--all-namespaces]</code> to see what endpoint is used for various resources including CRDs.</p>
+
+  <p>
+    <em>Actvity Timeout</em> is the number of seconds before the connection is considered stale and is rebuilt.
+    If network connectivity is intermittent it can lead to dead connections.
+    As a crude dead peer detection if no new event messages have been received during the timeout period the connection will be restarted.
+    Note that reconnects of this nature maintain the most recent resource version received so message flow should behave as if the connection was never dropped.
+    The only exception to this would be scenarios where an actual disconnect lasted a long enough period of time where the last received version is stale and no longer available,
+    in which case the reconnect will behave per the <em>Gone Resource Version Strategy</em> setting. Set to <code>0</code> to disable completely.
+  </p>
+
+  <p>
+    <em>Initial Resource Version Strategy</em> determines what resource version to use at node startup.
+    <dl class="message-properties">
+      <dt><code>RESTORE-CURRENT</code> - default</dt>
+      <dd>Starts at the last known version handled by <code>Node-RED</code>. If nothing can be restored fall back to <code>CURRENT</code>. To survive restarts you must have a persistent context store enabled.</dd>
+      <dt><code>RESTORE-NULL</code></dt>
+      <dd>Starts at the last known version handled by <code>Node-RED</code>. If nothing can be restored fall back to <code>NULL</code>. To survive restarts you must have a persistent context store enabled.</dd>
+      <dt><code>RESTORE-ZERO</code></dt>
+      <dd>Starts at the last known version handled by <code>Node-RED</code>. If nothing can be restored fall back to <code>ZERO</code>. To survive restarts you must have a persistent context store enabled.</dd>
+      <dt><code>CURRENT</code></dt>
+      <dd>Start at Most Recent.</dd>
+      <dt><code>NULL</code></dt>
+      <dd>Get State and Start at Most Recent.</dd>
+      <dt><code>ZERO</code></dt>
+      <dd>Get State and Start at Any.</dd>
+    </dl>
+  </p>
+
+  <p>
+    <em>Gone Resource Version Strategy</em> determines what resource version to use in any scenario where the requested version is too stale.
+    <dl class="message-properties">
+      <dt><code>CURRENT</code> - default</dt>
+      <dd>Start at Most Recent.</dd>
+      <dt><code>NULL</code></dt>
+      <dd>Get State and Start at Most Recent.</dd>
+      <dt><code>ZERO</code></dt>
+      <dd>Get State and Start at Any.</dd>
+    </dl>
+  </p>
+
+  <h3>References</h3>
+  <ul>
+    <li><a href="https://kubernetes.io/docs/reference/using-api/api-concepts/">API Concepts</a> - basic overview of API concepts</li>
+    <li><a href="https://kubernetes.io/docs/reference/using-api/api-concepts/#efficient-detection-of-changes">Efficient detection of changes</a> - general explanation of watches</li>
+    <li><a href="https://kubernetes.io/docs/reference/using-api/api-concepts/#resource-versions">Resource Versions</a> - deatils of <em>Resource Version</em> behaviors</li>
+    <li><a href="https://nodered.org/docs/api/context/">Context Store API</a> - deatils of <em>Context Store</em> configuration</li>
+  </ul>
+</script>
+
+<script type="text/x-red" data-help-name="kubernetes-client-http">
+  <p>Invokes HTTP requests to interact with the Kubernetes API.</p>
+
+  <h3>Inputs</h3>
+  <dl class="message-properties">
+    <dt>topic <span class="property-type">string</span></dt>
+    <dd>Path endpoint of the request.</dd>
+    <dt>method <span class="property-type">string</span></dt>
+    <dd>Standard HTTP methods such as <code>GET</code>, <code>POST</code>, <code>PATCH</code>, <code>DELETE</code>, etc.</dd>
+    <dt>payload <span class="property-type">object</span></dt>
+    <dd>The json body of the HTTP request. If <code>mgs.method</code> is <code>GET</code> then the query parameters.</dd>
+  </dl>
+
+  <h3>Outputs</h3>
+  <dl class="message-properties">
+    <dt>payload <span class="property-type">object</span></dt>
+    <dd>The body of the response.</dd>
+    <dt>kube <span class="property-type">object</span></dt>
+    <dd>Details from the current context of the <em>KUBECONFIG</em>, the full HTTP response, etc</dd>
+  </dl>
+
+  <h3>Details</h3>
+  <p>Allows for full interaction with the HTTP API of Kubernetes.</p>
+  <p>Some examples include:
+    <ul>
+      <li>
+        <pre>
+// POST namespace
+msg.topic = "/api/v1/namespaces";
+msg.method = "POST";
+msg.payload = {
+  apiVersion: "v1",
+  kind: "Namespace",
+  metadata: {
+    name: "nrtest"
+  }
+};
+        </pre>
+      </li>
+      <li>
+        <pre>
+// GET namespace
+msg.topic = "/api/v1/namespaces/nrtest";
+msg.method = "GET";
+msg.payload = {};
+        </pre>
+      </li>
+      <li>
+        <pre>
+// PATCH namespace
+msg.topic = "/api/v1/namespaces/nrtest";
+msg.method = "PATCH";
+msg.payload = {
+  metadata: {
+    labels: {
+      foo: "bar"
+    }
+  }
+};
+        </pre>
+      </li>
+      <li>
+        <pre>
+// DELETE namespace
+msg.topic = "/api/v1/namespaces/nrtest";
+msg.method = "DELETE";
+msg.payload = {};
+        </pre>
+      </li>
+    </ul>
+  </p>
+
+  <p>The special <code>msg.method</code> values of <code>PATCH-JSON</code> or <code>PATCH-STRATEGIC-MERGE</code> can be used for advanced PATCH/update scenarios.</p>
+
+  <h3>References</h3>
+  <ul>
+    <li><a href="https://kubernetes.io/docs/reference/using-api/api-concepts/">API Concepts</a> - basic overview of API concepts</li>
+    <li><a href="https://kubernetes.io/docs/tasks/administer-cluster/access-cluster-api/">Access Clusters Using the Kubernetes API</a> - general explanation of http API</li>
+    <li><a href="https://kubernetes.io/docs/tasks/run-application/update-api-object-kubectl-patch/">Update API Objects in Place Using kubectl patch</a> - intro to special <code>PATCH</code> <code>msg.method</code> values</li>
+  </ul>
+</script>
+
+<script type="text/x-red" data-template-name="kubernetes-client-config">
+  <div class="form-row">
+    <label for="node-config-input-kubeConfig"><i class="fa fa-user"></i> KUBECONFIG</label>
+    <textarea id="node-config-input-kubeConfig" placeholder="" style="width:70%;"></textarea>
+  </div>
+  <div class="form-row">
+    <label for="node-config-input-name"><i class="icon-tag"></i> Name</label>
+    <input type="text" id="node-config-input-name" placeholder="Name">
+  </div>
+</script>
+
+<script type="text/javascript">
+  RED.nodes.registerType("kubernetes-client-config", {
+    category: "config",
+    color: "#326DE6",
+    icon: "kubernetes_logo_40x60_white.png",
+    align: "left",
+    defaults: {
+      name: {value:""},
+      //kubeConfig: { required: true }
+    },
+    credentials: {
+      kubeConfig: { type: "text", required: true }
+    },
+    label: function() {
+      return this.name || "kubernetes config";
+    }
+  });
+</script>
+
+<script type="text/x-red" data-template-name="kubernetes-client-watch">
+  <div class="form-row">
+    <label for="node-input-kubernetesClientConfig"><i class="fa fa-user"></i> KUBECONFIG</label>
+    <input type="text" id="node-input-kubernetesClientConfig">
+  </div>
+  <div class="form-row">
+    <label for="node-input-endpoint"><i class="fa fa-folder-open"></i> Watch Endpoint</label>
+    <input type="text" id="node-input-endpoint" placeholder="Watch Endpoint">
+  </div>
+  <div class="form-row">
+    <label for="node-input-activityTimeout"><i class="fa fa-clock-o"></i> Actvity Timeout</label>
+    <input type="text" id="node-input-activityTimeout" placeholder="90">
+  </div>
+  <div class="form-row">
+    <label for="node-input-initialResourceVersionStrategy"><i class="fa fa-wrench"></i> Initial Resource Version Strategy</label>
+    <select type="text" id="node-input-initialResourceVersionStrategy">
+      <option value="RESTORE-CURRENT">RESTORE-CURRENT</option>
+      <option value="RESTORE-NULL">RESTORE-NULL</option>
+      <option value="RESTORE-ZERO">RESTORE-ZERO</option>
+      <option value="CURRENT">CURRENT</option>
+      <option value="NULL">NULL</option>
+      <option value="ZERO">ZERO</option>
+    </select>
+  </div>
+  <div class="form-row">
+    <label for="node-input-goneResourceVersionStrategy"><i class="fa fa-wrench"></i> Gone Resource Version Strategy</label>
+    <select type="text" id="node-input-goneResourceVersionStrategy">
+      <option value="CURRENT">CURRENT</option>
+      <option value="NULL">NULL</option>
+      <option value="ZERO">ZERO</option>
+    </select>
+  </div>
+  <div class="form-row">
+    <label for="node-input-name"><i class="icon-tag"></i> Name</label>
+    <input type="text" id="node-input-name" placeholder="Name">
+  </div>
+</script>
+
+<script type="text/javascript">
+  RED.nodes.registerType("kubernetes-client-watch", {
+    category: "kubernetes",
+    color: "#326DE6",
+    icon: "kubernetes_logo_40x60_white.png",
+    align: "left",
+    defaults: {
+      kubernetesClientConfig: { type: "kubernetes-client-config", required: true },
+      endpoint: { value: "", required: true },
+      activityTimeout: { value: 90 },
+      initialResourceVersionStrategy: { "value": "RESTORE-CURRENT"},
+      goneResourceVersionStrategy: { "value": "CURRENT"},
+      name: { value: ""},
+    },
+    inputs: 0,
+    outputs: 1,
+    label: function() {
+      return this.name || "kubernetes watch";
+    },
+    paletteLabel: "kubernetes watch",
+    labelStyle: function() {
+      return this.name ? "node_label_italic" : "";
+    },
+    outputLabels: ["kubernetes events"]
+  });
+</script>
+
+<script type="text/x-red" data-template-name="kubernetes-client-http">
+  <div class="form-row">
+    <label for="node-input-kubernetesClientConfig"><i class="fa fa-user"></i> KUBECONFIG</label>
+    <input type="text" id="node-input-kubernetesClientConfig">
+  </div>
+  <div class="form-row">
+    <label for="node-input-name"><i class="icon-tag"></i> Name</label>
+    <input type="text" id="node-input-name" placeholder="Name">
+  </div>
+</script>
+
+<script type="text/javascript">
+  RED.nodes.registerType("kubernetes-client-http", {
+    category: "kubernetes",
+    color: "#326DE6",
+    icon: "kubernetes_logo_40x60_white.png",
+    align: "left",
+    defaults: {
+      kubernetesClientConfig: { type: "kubernetes-client-config", required: true },
+      name: { value: ""},
+    },
+    inputs: 1,
+    outputs: 1,
+    label: function() {
+      return this.name || "kubernetes http";
+    },
+    paletteLabel: "kubernetes http",
+    labelStyle: function() {
+      return this.name ? "node_label_italic" : "";
+    },
+    outputLabels: ["kubernetes http response"],
+    inputLabels: ["kubernetes http request"]
+  });
+</script>

@@ -1,0 +1,38 @@
+{
+  "name": "node-red-contrib-kubernetes-client",
+  "version": "0.1.0",
+  "description": "A node-red node that supports interacting with kubernetes clusters (watches, http API)",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/travisghansen/node-red-contrib-kubernetes-client.git"
+  },
+  "keywords": [
+    "node-red",
+    "node",
+    "nodered",
+    "k8s",
+    "kubernetes",
+    "client"
+  ],
+  "node-red": {
+    "nodes": {
+      "kubernetes-client": "src/index.js"
+    }
+  },
+  "author": "Travis Glenn Hansen <travisghansen@yahoo.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/travisghansen/node-red-contrib-kubernetes-client/issues"
+  },
+  "homepage": "https://github.com/travisghansen/node-red-contrib-kubernetes-client#readme",
+  "dependencies": {
+    "@kubernetes/client-node": "^0.11.0",
+    "query-string": "^6.9.0",
+    "request": "^2.88.0",
+    "uri-js": "^4.2.2"
+  }
+}

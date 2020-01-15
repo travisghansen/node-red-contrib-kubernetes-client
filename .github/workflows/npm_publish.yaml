@@ -1,0 +1,22 @@
+# https://techsparx.com/nodejs/tools/publish-github.html
+name: npm publish
+
+on:
+  push:
+    tags:
+      - v**
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [12.x]
+    steps:
+      - name: npm publish
+        run: |
+          npm config set //registry.npmjs.org/:_authToken=$NODE_AUTH_TOKEN
+          npm run trypublish
+        env:
+          CI: true
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
