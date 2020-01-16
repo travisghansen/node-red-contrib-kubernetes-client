@@ -165,7 +165,7 @@ module.exports = function(RED) {
     const endpoint = node.options.endpoint;
     const endpointHash = require("crypto")
       .createHash("md5")
-      .update(endpoint)
+      .update(`${node.kubernetesClientConfig}:${endpoint}`)
       .digest("hex");
     let endpointHashHasBeenSet = false;
     let connecting = false;
@@ -536,7 +536,7 @@ module.exports = function(RED) {
           let res = await KubernetesHttpRequest(kc, msg);
           msg.payload = res.body;
           msg.kube = {};
-          msg.kube.response = res;
+          msg.kube.response = JSON.parse(JSON.stringify(res));
           msg.kube.config = {};
           msg.kube.config.cluster = kc.getCurrentCluster();
           send(msg);
