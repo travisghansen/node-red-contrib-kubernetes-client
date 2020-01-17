@@ -92,7 +92,7 @@ module.exports = function(RED) {
   }
 
   /**
-   * Given a URI, remove and pars of the path that equal 'watch'
+   * Given a URI, remove parts of the path that equal 'watch'
    * and also remove any 'watch' parameters from the query string
    *
    * @param {*} uri
@@ -276,8 +276,6 @@ module.exports = function(RED) {
         resourceVersion = null;
       }
 
-      //resourceVersion = 1;
-
       node.log(
         `watching ${
           kc.getCurrentCluster().server
@@ -291,6 +289,8 @@ module.exports = function(RED) {
           if (type === undefined || object === undefined) {
             return;
           }
+
+          node.lastMessageTimestamp = Math.floor(Date.now() / 1000);
 
           if (type == "ERROR") {
             node.error(
@@ -333,35 +333,34 @@ module.exports = function(RED) {
                   break;
               }
             }
-          } else {
-            node.lastMessageTimestamp = Math.floor(Date.now() / 1000);
-            if (
-              object.metadata.resourceVersion &&
-              object.metadata.resourceVersion > Number(resourceVersion)
-            ) {
-              latestResourceVersion = object.metadata.resourceVersion;
-              node.context().set("resourceVersion", latestResourceVersion);
-              if (endpointHashHasBeenSet === false) {
-                node.context().set("endpointHash", endpointHash);
-                endpointHashHasBeenSet = true;
-              }
-            }
-
-            // TODO: perhaps use object.metadata.creationTimestamp to filter out ADDED events on startup
-
-            node.status(statuses.transfer);
-            const msg = {};
-            msg.payload = { type, object };
-            msg.topic = object.metadata.selfLink;
-            msg.kube = {};
-            msg.kube.config = {};
-            msg.kube.config.cluster = kc.getCurrentCluster();
-            // potential security issue
-            //msg.config.context = kc.getCurrentContext();
-            //msg.config.user = kc.getCurrentUser();
-            node.send(msg);
-            node.status(statuses.connected);
           }
+
+          if (
+            object.metadata.resourceVersion &&
+            object.metadata.resourceVersion > Number(latestResourceVersion)
+          ) {
+            latestResourceVersion = object.metadata.resourceVersion;
+            node.context().set("resourceVersion", latestResourceVersion);
+            if (endpointHashHasBeenSet === false) {
+              node.context().set("endpointHash", endpointHash);
+              endpointHashHasBeenSet = true;
+            }
+          }
+
+          // TODO: perhaps use object.metadata.creationTimestamp to filter out ADDED events on startup
+
+          node.status(statuses.transfer);
+          const msg = {};
+          msg.payload = { type, object };
+          msg.topic = object.metadata.selfLink || "";
+          msg.kube = {};
+          msg.kube.config = {};
+          msg.kube.config.cluster = kc.getCurrentCluster();
+          // potential security issue
+          //msg.config.context = kc.getCurrentContext();
+          //msg.config.user = kc.getCurrentUser();
+          node.send(msg);
+          node.status(statuses.connected);
         },
         err => {
           connecting = false;

@@ -2,18 +2,18 @@
   <p>Configuration node for Kubernetes Client.</p>
 
   <h3>Details</h3>
-  <p>Simply supply your <code>KUBECONFIG</code> file contents.</p>
+  <p>Simply supply your <code>KUBECONFIG</code> file contents. If left blank it will attempt to use default settings (ENV, ~/.kube/config, in-cluster, etc)</p>
 </script>
 
 <script type="text/x-red" data-help-name="kubernetes-client-watch">
-  <p>Listens to Kubernetes events and outputs the event details.</p>
+  <p>Listens to Kubernetes <code>watch</code> events and outputs event details.</p>
 
   <h3>Outputs</h3>
   <dl class="message-properties">
     <dt>payload <span class="property-type">object</span></dt>
     <dd>The Kubernetes watch event.</dd>
     <dt>topic <span class="property-type">string</span></dt>
-    <dd>The <em>selfLink</em> value of the evented object.</dd>
+    <dd>The <em>selfLink</em> value of the evented object. May be empty in error scenarios.</dd>
     <dt>kube <span class="property-type">object</span></dt>
     <dd>Details from the current context of the <em>KUBECONFIG</em>.</dd>
   </dl>
@@ -21,7 +21,7 @@
   <h3>Details</h3>
   <p>Outputs all events from the provided <em>Watch Endpoint</em>.</p>
 
-  <p>The specified <em>Watch Endpoint</em> can be any valid api endpoint. It should only be the path portion of the API and not include server name/port/etc. Some examples include:
+  <p>The specified <em>Watch Endpoint</em> can be any valid api endpoint. It should only be the path portion of the API and not include server protocol/name/port/etc. Some examples include:
     <ul>
       <li><code>/api/v1/namespaces</code></li>
       <li><code>/api/v1/events</code></li>
