@@ -1,6 +1,6 @@
 {
   "name": "node-red-contrib-kubernetes-client",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "A node-red node that supports interacting with kubernetes clusters (watches, http API)",
   "main": "src/index.js",
   "scripts": {
@@ -31,6 +31,7 @@
   "homepage": "https://github.com/travisghansen/node-red-contrib-kubernetes-client#readme",
   "dependencies": {
     "@kubernetes/client-node": "^0.11.0",
+    "lru-cache": "^5.1.1",
     "query-string": "^6.9.0",
     "request": "^2.88.0",
     "uri-js": "^4.2.2"

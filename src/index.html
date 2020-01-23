@@ -86,8 +86,8 @@
 
   <h3>Inputs</h3>
   <dl class="message-properties">
-    <dt>topic <span class="property-type">string</span></dt>
-    <dd>Path endpoint of the request.</dd>
+    <dt>topic <span class="property-type">string|object</span></dt>
+    <dd>Path endpoint of the request. Alternatively, you may pass an object that represents a Kubernetes resource.</dd>
     <dt>method <span class="property-type">string</span></dt>
     <dd>Standard HTTP methods such as <code>GET</code>, <code>POST</code>, <code>PATCH</code>, <code>DELETE</code>, etc.</dd>
     <dt>payload <span class="property-type">object</span></dt>

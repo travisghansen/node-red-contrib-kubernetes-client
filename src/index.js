@@ -4,10 +4,7 @@
  */
 module.exports = function(RED) {
   "use strict";
-  const k8s = require("@kubernetes/client-node");
-  const queryString = require("query-string");
-  const request = require("request");
-  const URI = require("uri-js");
+  const KubeConfig = require("./config").KubeConfig;
 
   /**
    * https://nodered.org/docs/creating-nodes/status
@@ -25,102 +22,6 @@ module.exports = function(RED) {
     transfer: { fill: "blue", shape: "dot", text: "transfer" },
     blank: {}
   };
-
-  function KubernetesHttpRequest(kc, msg) {
-    return new Promise((resolve, reject) => {
-      let endpoint = WatchlessURI(msg.topic);
-      msg.method = msg.method || "GET";
-      const options = {
-        method: msg.method.toUpperCase(),
-        url: `${kc.getCurrentCluster().server}${endpoint}`,
-        headers: {
-          Accept: "application/json",
-          "User-Agent": "Node-RED",
-          "Content-Type": "application/json"
-        },
-        json: true
-        //agentOptions: {
-        //  rejectUnauthorized: false
-        //}
-      };
-
-      kc.applyToRequest(options);
-
-      if (msg.method.includes("PATCH")) {
-        /**
-         * https://github.com/kubernetes/community/blob/master/contributors/devel/api-conventions.md#patch-operations
-         * https://github.com/kubernetes/community/blob/master/contributors/devel/strategic-merge-patch.md
-         *
-         * Content-Type: application/json-patch+json
-         * Content-Type: application/merge-patch+json
-         * Content-Type: application/strategic-merge-patch+json
-         */
-        switch (msg.method) {
-          case "PATCH-JSON":
-            options["headers"]["Content-Type"] = "application/json-patch+json";
-            break;
-          case "PATCH-STRATEGIC-MERGE":
-            options["headers"]["Content-Type"] =
-              "application/strategic-merge-patch+json";
-            break;
-          case "PATCH":
-          case "PATCH-MERGE":
-          default:
-            options["headers"]["Content-Type"] = "application/merge-patch+json";
-            break;
-        }
-
-        options.method = "PATCH";
-      }
-
-      switch (options.method.toUpperCase()) {
-        case "GET":
-          options.qs = msg.payload;
-          break;
-        default:
-          options.body = msg.payload;
-          break;
-      }
-
-      request(options, function(err, res, body) {
-        if (err) {
-          reject(err);
-        }
-        resolve(res);
-      });
-    });
-  }
-
-  /**
-   * Given a URI, remove parts of the path that equal 'watch'
-   * and also remove any 'watch' parameters from the query string
-   *
-   * @param {*} uri
-   */
-  function WatchlessURI(uri) {
-    const suri = URI.parse(URI.normalize(uri));
-    const path = suri.path;
-    const query = suri.query;
-
-    const pathParts = path.split("/");
-    const pathPartsWithoutWatch = pathParts.filter(item => {
-      if (item.toLowerCase() != "watch") {
-        return true;
-      }
-      return false;
-    });
-
-    const squery = queryString.parse(query);
-    delete squery["watch"];
-
-    const newPath = pathPartsWithoutWatch.join("/");
-    const newUri = URI.serialize({
-      path: newPath,
-      query: queryString.stringify(squery)
-    });
-
-    return newUri;
-  }
 
   function KubernetesClientConfigNode(n) {
     RED.nodes.createNode(this, n);
@@ -160,8 +61,8 @@ module.exports = function(RED) {
       this.kubernetesClientConfig
     );
 
-    const kc = new k8s.KubeConfig();
-    const watch = new k8s.Watch(kc);
+    const kc = new KubeConfig();
+    const watch = kc.createWatch();
     const endpoint = node.options.endpoint;
     const endpointHash = require("crypto")
       .createHash("md5")
@@ -210,7 +111,7 @@ module.exports = function(RED) {
         switch (node.options.initialResourceVersionStrategy) {
           case "CURRENT":
             try {
-              const res = await KubernetesHttpRequest(kc, {
+              const res = await kc.makeHttpRestRequest({
                 topic: endpoint,
                 payload: { limit: 1 }
               });
@@ -252,7 +153,7 @@ module.exports = function(RED) {
               resourceVersion = node.context().get("resourceVersion") || null;
             } else {
               try {
-                const res = await KubernetesHttpRequest(kc, {
+                const res = await kc.makeHttpRestRequest({
                   topic: endpoint,
                   payload: { limit: 1 }
                 });
@@ -319,7 +220,7 @@ module.exports = function(RED) {
                 case "CURRENT":
                 default:
                   try {
-                    const res = await KubernetesHttpRequest(kc, {
+                    const res = await kc.makeHttpRestRequest({
                       topic: endpoint,
                       payload: { limit: 1 }
                     });
@@ -353,12 +254,28 @@ module.exports = function(RED) {
           const msg = {};
           msg.payload = { type, object };
           msg.topic = object.metadata.selfLink || "";
+
+          /**
+           * try to add selfLink to involvedObject
+           */
+          if (
+            msg.payload.object.kind == "Event" &&
+            msg.payload.object.apiVersion == "v1"
+          ) {
+            try {
+              let selfLink = await kc.buildResourceSelfLink(
+                msg.payload.object.involvedObject
+              );
+              msg.payload.object.involvedObject.selfLink = selfLink;
+            } catch (err) {}
+          }
+
           msg.kube = {};
           msg.kube.config = {};
           msg.kube.config.cluster = kc.getCurrentCluster();
-          // potential security issue
-          //msg.config.context = kc.getCurrentContext();
-          //msg.config.user = kc.getCurrentUser();
+          msg.kube.config.context = kc.getCurrentContext();
+          msg.kube.config.user = kc.getCurrentUser();
+          msg.kube.client = kc;
           node.send(msg);
           node.status(statuses.connected);
         },
@@ -505,7 +422,7 @@ module.exports = function(RED) {
       this.kubernetesClientConfig
     );
 
-    const kc = new k8s.KubeConfig();
+    const kc = new KubeConfig();
     if (node.kubernetesClientConfigNode.credentials.kubeConfig) {
       kc.loadFromString(node.kubernetesClientConfigNode.credentials.kubeConfig);
     } else {
@@ -532,12 +449,49 @@ module.exports = function(RED) {
            * headers
            * request
            */
-          let res = await KubernetesHttpRequest(kc, msg);
+          let res = await kc.makeHttpRestRequest(msg);
           msg.payload = res.body;
+
+          /**
+           * try to add selfLink to involvedObject
+           */
+          if (
+            ["Event", "EventList"].includes(msg.payload.kind) &&
+            msg.payload.apiVersion == "v1"
+          ) {
+            try {
+              switch (msg.payload.kind) {
+                case "Event":
+                  let selfLink = await kc.buildResourceSelfLink(
+                    msg.payload.involvedObject
+                  );
+                  msg.payload.involvedObject.selfLink = selfLink;
+
+                  break;
+                case "EventList":
+                  await Promise.all(
+                    msg.payload.items.map(async (element, index) => {
+                      try {
+                        let selfLink = await kc.buildResourceSelfLink(
+                          element.involvedObject
+                        );
+                        element.involvedObject.selfLink = selfLink;
+                      } catch (err) {}
+                    })
+                  );
+
+                  break;
+              }
+            } catch (err) {}
+          }
+
           msg.kube = {};
           msg.kube.response = JSON.parse(JSON.stringify(res));
           msg.kube.config = {};
           msg.kube.config.cluster = kc.getCurrentCluster();
+          msg.kube.config.context = kc.getCurrentContext();
+          msg.kube.config.user = kc.getCurrentUser();
+          msg.kube.client = kc;
           send(msg);
           node.status(statuses.blank);
           if (done) {
