@@ -210,6 +210,13 @@ class KubeConfig extends k8s.KubeConfig {
   }
 
   async dressEventResource(event, removeOld = true) {
+    if (!event) {
+      return;
+    }
+    if (!event.involvedObject) {
+      return;
+    }
+
     event.involvedObject.metadata = event.involvedObject.metadata || {};
 
     [
