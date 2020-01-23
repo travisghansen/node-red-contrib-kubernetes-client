@@ -208,6 +208,38 @@ class KubeConfig extends k8s.KubeConfig {
       throw new Error("failure to lookup resource selfLink");
     }
   }
+
+  async dressEventResource(event, removeOld = true) {
+    event.involvedObject.metadata = event.involvedObject.metadata || {};
+
+    [
+      "name",
+      "namespace",
+      "uid",
+      "resourceVersion",
+      "creationTimestamp"
+    ].forEach(attribute => {
+      if (
+        event.involvedObject.hasOwnProperty(attribute) &&
+        !event.involvedObject.metadata.hasOwnProperty(attribute)
+      ) {
+        event.involvedObject.metadata[attribute] =
+          event.involvedObject[attribute];
+
+        if (removeOld) {
+          delete event.involvedObject[attribute];
+        }
+      }
+    });
+
+    if (!event.involvedObject.metadata.hasOwnProperty("selfLink")) {
+      try {
+        let selfLink = await this.buildResourceSelfLink(event.involvedObject);
+
+        event.involvedObject.metadata.selfLink = selfLink;
+      } catch (err) {}
+    }
+  }
 }
 
 module.exports.KubeConfig = KubeConfig;

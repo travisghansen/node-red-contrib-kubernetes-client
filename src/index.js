@@ -263,10 +263,7 @@ module.exports = function(RED) {
             msg.payload.object.apiVersion == "v1"
           ) {
             try {
-              let selfLink = await kc.buildResourceSelfLink(
-                msg.payload.object.involvedObject
-              );
-              msg.payload.object.involvedObject.selfLink = selfLink;
+              await kc.dressEventResource(msg.payload.object);
             } catch (err) {}
           }
 
@@ -462,20 +459,14 @@ module.exports = function(RED) {
             try {
               switch (msg.payload.kind) {
                 case "Event":
-                  let selfLink = await kc.buildResourceSelfLink(
-                    msg.payload.involvedObject
-                  );
-                  msg.payload.involvedObject.selfLink = selfLink;
+                  await kc.dressEventResource(msg.payload);
 
                   break;
                 case "EventList":
                   await Promise.all(
-                    msg.payload.items.map(async (element, index) => {
+                    msg.payload.items.map(async element => {
                       try {
-                        let selfLink = await kc.buildResourceSelfLink(
-                          element.involvedObject
-                        );
-                        element.involvedObject.selfLink = selfLink;
+                        return kc.dressEventResource(element);
                       } catch (err) {}
                     })
                   );
