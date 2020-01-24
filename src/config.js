@@ -5,10 +5,12 @@ const queryString = require("query-string");
 const request = require("request");
 const URI = require("uri-js");
 
+const FAILURE_CACHE_TIME = 5 * 60 * 1000; // 5 minutes
+const SUCCESS_CACHE_TIME = 1 * 60 * 60 * 1000; // 1 hour
 class KubeConfig extends k8s.KubeConfig {
   constructor() {
     super(...arguments);
-    this.discoveryCache = new LRU({ maxAge: 1 * 60 * 60 * 1000 }); // 1 hour
+    this.discoveryCache = new LRU({ maxAge: SUCCESS_CACHE_TIME });
   }
 
   /**
@@ -130,6 +132,138 @@ class KubeConfig extends k8s.KubeConfig {
     return newUri;
   }
 
+  async getAPIGroups() {
+    let res;
+    let cacheKey = "__APIGroups";
+    res = this.discoveryCache.get(cacheKey);
+    if (res === undefined) {
+      res = await this.makeHttpRestRequest({
+        topic: "/apis"
+      });
+
+      if (res.stausCode == 200) {
+        res = res.body;
+        this.discoveryCache.set(cacheKey, res);
+      } else {
+        res = res.body;
+        this.discoveryCache.set(cacheKey, res, FAILURE_CACHE_TIME);
+      }
+    }
+
+    return res;
+  }
+
+  async getAPIResources(preferredVersions = false) {
+    this.locks = this.locks || {};
+    let cacheKey = "__APIResources";
+
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    let i = 0;
+    while (this.locks[cacheKey]) {
+      i++;
+      await sleep(1000);
+
+      if (i > 10) {
+        break;
+      }
+    }
+
+    // test cache lock and wait
+    let resources = this.discoveryCache.get(cacheKey);
+
+    if (resources === undefined) {
+      // apply lock
+      this.locks[cacheKey] = true;
+
+      resources = [];
+
+      try {
+        let apiGroups = await this.getAPIGroups();
+        let api = await this.makeHttpRestRequest({ topic: "/api" });
+
+        if (api.statusCode == 200) {
+          await Promise.all(
+            api.body.versions.map(async version => {
+              let res = await this.makeHttpRestRequest({
+                topic: `/api/${version}`
+              });
+
+              if (res.statusCode == 200) {
+                resources.push(res.body);
+              }
+            })
+          );
+        }
+
+        if (apiGroups.groups) {
+          await Promise.all(
+            apiGroups.groups.map(async group => {
+              await Promise.all(
+                group.versions.map(async version => {
+                  let res = await this.makeHttpRestRequest({
+                    topic: `/apis/${version.groupVersion}`
+                  });
+
+                  if (res.statusCode == 200) {
+                    resources.push(res.body);
+                  }
+                })
+              );
+            })
+          );
+        }
+      } catch (err) {}
+
+      if (resources.length > 0) {
+        this.discoveryCache.set(cacheKey, resources);
+      }
+
+      // remove lock
+      this.locks[cacheKey] = false;
+    }
+
+    if (preferredVersions) {
+      let apiGroups = await this.getAPIGroups();
+      resources = resources.filter(resource => {
+        // apiVersion is not present on core api resource list
+        if (!resource.apiVersion) {
+          return true;
+        }
+        return apiGroups.groups.some(group => {
+          return group.preferredVersion.groupVersion == resource.groupVersion;
+        });
+      });
+    }
+
+    return resources;
+  }
+
+  /**
+   * 
+   * @param {*} kind 
+   * @param {*} version 
+   */
+  async getApiGroupVersion(kind, version) {
+    const resources = await this.getAPIResources(true);
+    let matches = resources.filter(resourceList => {
+      let groupVersionVersion = resourceList.groupVersion.split("/").pop();
+      if (version && !(groupVersionVersion == version)) {
+        return false;
+      }
+
+      return resourceList.resources.some(resource => {
+        return resource.kind.toLowerCase() == kind.toLowerCase();
+      });
+    });
+
+    if (matches.length == 1) {
+      return matches[0].groupVersion;
+    }
+  }
+
   async buildResourceSelfLink(kind, apiVersion, name, namespace) {
     let res;
     if (arguments.length == 1) {
@@ -151,8 +285,11 @@ class KubeConfig extends k8s.KubeConfig {
       }
     }
 
-    if (kind == "Node" && apiVersion == undefined) {
-      apiVersion = "v1";
+    // for testing
+    //apiVersion = undefined;
+
+    if (!apiVersion) {
+      apiVersion = await this.getApiGroupVersion(kind);
     }
 
     if (apiVersion == undefined || apiVersion === null) {
@@ -163,13 +300,8 @@ class KubeConfig extends k8s.KubeConfig {
     if (apiVersion == "v1") {
       prefix = "/api";
     }
+
     //console.log(kind, apiVersion, name, namespace);
-
-    //res = await this.makeHttpRestRequest({ topic: "/api" });
-    //console.log(res.body);
-
-    //res = await this.makeHttpRestRequest({ topic: "/apis" });
-    //console.log(res.body);
 
     /**
      * cache each unique resource as a key
@@ -182,13 +314,40 @@ class KubeConfig extends k8s.KubeConfig {
         topic: `${prefix}/${apiVersion}`
       });
 
-      if (res.stausCode == 200) {
+      if (res.statusCode == 200) {
         res = res.body;
         this.discoveryCache.set(cacheKey, res);
+      } else if (res.statusCode == 404) {
+        // assume in incomplete apiVersion (ie: only the version and not groupVersion)
+        // attempt to find full groupVersion
+
+        let newApiVersion = await this.getApiGroupVersion(kind, apiVersion);
+        // try again
+        if (newApiVersion && newApiVersion != apiVersion) {
+          apiVersion = newApiVersion;
+          res = await this.makeHttpRestRequest({
+            topic: `${prefix}/${apiVersion}`
+          });
+
+          if (res.statusCode == 200) {
+            res = res.body;
+            this.discoveryCache.set(cacheKey, res);
+          } else {
+            res = res.body;
+            this.discoveryCache.set(cacheKey, res, FAILURE_CACHE_TIME);
+          }
+        } else {
+          res = res.body;
+          this.discoveryCache.set(cacheKey, res, FAILURE_CACHE_TIME);
+        }
       } else {
         res = res.body;
-        this.discoveryCache.set(cacheKey, res, 5 * 60 * 1000); // 5 minute cache for failures
+        this.discoveryCache.set(cacheKey, res, FAILURE_CACHE_TIME);
       }
+    }
+
+    if (!res.resources) {
+      return;
     }
 
     let resource = res.resources.find(resource => {
@@ -217,8 +376,8 @@ class KubeConfig extends k8s.KubeConfig {
       return;
     }
 
+    // move traditional metadata fields to metadata block
     event.involvedObject.metadata = event.involvedObject.metadata || {};
-
     [
       "name",
       "namespace",
@@ -239,6 +398,22 @@ class KubeConfig extends k8s.KubeConfig {
       }
     });
 
+    // attempt to cleanup incomplete apiVersion (ie: not including the group)
+    // if applicable
+    let newApiVersion = await this.getApiGroupVersion(
+      event.involvedObject.kind,
+      event.involvedObject.apiVersion
+    );
+
+    if (newApiVersion) {
+      if (!event.involvedObject.apiVersion) {
+        event.involvedObject.apiVersion = newApiVersion;
+      } else if (event.involvedObject.apiVersion != newApiVersion) {
+        event.involvedObject.apiVersion = newApiVersion;
+      }
+    }
+
+    // attempt to create selfLink
     if (!event.involvedObject.metadata.hasOwnProperty("selfLink")) {
       try {
         let selfLink = await this.buildResourceSelfLink(event.involvedObject);

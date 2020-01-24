@@ -26,6 +26,26 @@ module.exports = function(RED) {
   function KubernetesClientConfigNode(n) {
     RED.nodes.createNode(this, n);
     this.options = {};
+    this.kc = new KubeConfig();
+
+    if (this.credentials.kubeConfig) {
+      this.kc.loadFromString(this.credentials.kubeConfig);
+    } else {
+      this.kc.loadFromDefault();
+    }
+
+    this.on("close", (removed, done) => {
+      if (removed) {
+        // This node has been deleted
+      } else {
+        // This node is being restarted
+      }
+      this.kc.discoveryCache.reset();
+      delete this.kc.discoveryCache;
+      delete this.kc;
+
+      done();
+    });
   }
 
   RED.nodes.registerType(
@@ -61,7 +81,7 @@ module.exports = function(RED) {
       this.kubernetesClientConfig
     );
 
-    const kc = new KubeConfig();
+    const kc = this.kubernetesClientConfigNode.kc;
     const watch = kc.createWatch();
     const endpoint = node.options.endpoint;
     const endpointHash = require("crypto")
@@ -75,12 +95,6 @@ module.exports = function(RED) {
     let forcedResourceVersion = false;
     let triggerWatchViaShortInterval = false;
     let shortIntervalSeconds = 10;
-
-    if (node.kubernetesClientConfigNode.credentials.kubeConfig) {
-      kc.loadFromString(node.kubernetesClientConfigNode.credentials.kubeConfig);
-    } else {
-      kc.loadFromDefault();
-    }
 
     node.startWatch = async function() {
       if (node.watch) {
@@ -419,12 +433,7 @@ module.exports = function(RED) {
       this.kubernetesClientConfig
     );
 
-    const kc = new KubeConfig();
-    if (node.kubernetesClientConfigNode.credentials.kubeConfig) {
-      kc.loadFromString(node.kubernetesClientConfigNode.credentials.kubeConfig);
-    } else {
-      kc.loadFromDefault();
-    }
+    const kc = this.kubernetesClientConfigNode.kc;
 
     if (node.kubernetesClientConfig) {
       node.on("input", async function(msg, send, done) {
