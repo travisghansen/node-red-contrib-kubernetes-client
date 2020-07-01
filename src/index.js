@@ -197,7 +197,7 @@ module.exports = function(RED) {
         }${endpoint} from resourceVersion: ${resourceVersion}`
       );
 
-      node.watch = watch.watch(
+      node.watch = await watch.watch(
         endpoint,
         { resourceVersion },
         async (type, object) => {
